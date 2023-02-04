@@ -42,7 +42,7 @@ contract Lottery is VRFConsumerBase, Ownable {
             lottery_state == LOTTERY_STATE.OPEN,
             "Can't join now, Lottery Closed!"
         );
-        require(msg.value >= getEntranceFee()); //
+        require(msg.value >= getEntranceFee()); //This needs to be replaced with NFT value assesment algorithm
         players.push(msg.sender); // push current player to our players array
     }
 

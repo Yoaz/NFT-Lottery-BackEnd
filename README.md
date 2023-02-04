@@ -15,4 +15,4 @@ Key points:
    in the time of joining.
 4. Lottery will start with a minimum valued NFT (greater than 0)
 
-FrontEnd part for this can be found: https://github.com/Yoaz/NFT-Lottery-FrontEnd.git
+FrontEnd part for this can be found: https://github.com/Yoaz/NFT-Lottery-FrontEnd

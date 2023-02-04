@@ -47,7 +47,7 @@ def end_lottery():
 
 def update_front_end():
     # Sending frontend the build folder
-    copy_folders_to_front_end("./build", "../nextjs-smartcontract-lottery/chain-info")
+    copy_folders_to_front_end("./build", "../NFT Lottery FrontEnd/chain-info")
     # Sending frontend the brownie-config file in JSON format
     with open("brownie-config.yaml", "r") as brownie_config:
         config_dict = yaml.load(brownie_config, Loader=yaml.FullLoader)
