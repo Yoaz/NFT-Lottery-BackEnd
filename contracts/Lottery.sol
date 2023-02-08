@@ -117,7 +117,11 @@ contract Lottery is VRFConsumerBase, Ownable {
 
     /* Getter Functions */
     function getTreasuryAvg() public view returns(uint256){
-        for(uint256 i= )
+        uint256 avg = 0;
+        for(uint256 nftTreasuryIndex=0; nftTreasuryIndex <= treasury.length; nftTreasuryIndex++ ){
+            avg += getNFTValue(treasury[nftTreasuryIndex]);
+        }
+        return avg;
     }
 
     // Returns value in USD of an NFT 
