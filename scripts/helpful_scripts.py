@@ -8,6 +8,7 @@ from brownie import (
     VRFCoordinatorMock,
     LinkToken,
 )
+from brownie.network.gas.strategies import GasNowStrategy
 
 FORKED_LOCAL_ENVOIRMENTAL = {"mainnet-fork", "mainnet-fork-dev"}
 LOCAL_BLOCKCHAIN_DEVELOPMENT = {"development", "ganache-local"}

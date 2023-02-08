@@ -5,6 +5,8 @@ import yaml
 import json
 import os
 import shutil
+from brownie.network.gas.strategies import GasNowStrategy
+
 
 def deploy_lottery(front_end_update=False):
     account = get_account()
@@ -13,7 +15,7 @@ def deploy_lottery(front_end_update=False):
     get_contract("link_token").address,
     config["networks"][network.show_active()]["fee"], 
     config["networks"][network.show_active()]["key_hash"],
-    {"from": account},
+    {"from": account}, 
     publish_source = config["networks"][network.show_active()].get("verify", False))
     if front_end_update:
         update_front_end()
