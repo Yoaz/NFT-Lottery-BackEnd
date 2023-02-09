@@ -74,9 +74,13 @@ contract Lottery is VRFConsumerBase, Ownable {
 		else {
 			require(
 				inBetween(
-					getNFTValue(nft(_collectionAddress, _tokenId, msg.sender))
+					getNFTValue(
+						nft(_collectionAddress, _tokenId, msg.sender),
+						getTreasuryAvg() * 0.85,
+						getTreasuryAvg() * 1.15
+					)
 				),
-				"You need to add an NFT with 15% margin range of current lottery treasury"
+				"You need to add an NFT with 15% margin range of current lottery treasury avarage"
 			); //To implement getNFTValue & getTreasuryAvg
 		}
 		token.transferFrom(msg.sender, address(this), _tokenId);
