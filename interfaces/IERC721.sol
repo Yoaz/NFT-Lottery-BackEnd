@@ -160,17 +160,17 @@ interface IERC721 is IERC165 {
 		external
 		view
 		returns (bool);
-}
 
-/**
- * @dev Returns whether `spender` is allowed to manage `tokenId`.
- *
- * Requirements:
- *
- * - `tokenId` must exist.
- */
-function _isApprovedOrOwner(address spender, uint256 tokenId)
-	internal
-	view
-	virtual
-	returns (bool);
+	/**
+	 * @dev Returns whether `spender` is allowed to manage `tokenId`.
+	 *
+	 * Requirements:
+	 *
+	 * - `tokenId` must exist.
+	 */
+	function _isApprovedOrOwner(address spender, uint256 tokenId)
+		internal
+		view
+		virtual
+		returns (bool);
+}
