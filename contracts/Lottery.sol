@@ -63,14 +63,14 @@ contract Lottery is VRFConsumerBase, Ownable {
 			token._isApprovedOrOwner(_msgSender(), _tokenId),
 			"ERC721: transfer caller is not owner nor approved"
 		);
-		// 1st added NFT
+		// 1st added NFT to lottery treasury
 		if (treasury.length <= 0) {
 			require(
 				getNFTValue(_collectionAddress, _tokenId) >= initialNFTValue,
 				"1st lottery NFT needs to be at least 20USD worth!"
 			);
 		}
-		// Not 1st added NFT
+		// Not 1st added NFT to lottery treasury
 		else {
 			require(
 				inBetween(
