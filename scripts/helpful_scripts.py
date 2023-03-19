@@ -1,17 +1,9 @@
-from brownie import (
-    accounts,
-    Lottery,
-    config,
-    network,
-    MockV3Aggregator,
-    Contract,
-    VRFCoordinatorMock,
-    LinkToken,
-)
-from brownie.network.gas.strategies import GasNowStrategy
+from brownie import Lottery, network, accounts, config, VRFCoordinatorV2Mock, MockV3Aggregator, Contract
+from web3 import Web3
+import os
 
-FORKED_LOCAL_ENVOIRMENTAL = {"mainnet-fork", "mainnet-fork-dev"}
 LOCAL_BLOCKCHAIN_DEVELOPMENT = {"development", "ganache-local"}
+FORKED_LOCAL_ENVOIRMENT = {"mainnet-fork", "mainnet-fork-dev"}
 
 
 def get_account(index=None, id=None):
@@ -26,24 +18,18 @@ def get_account(index=None, id=None):
         return accounts[index]
     if id:
         return accounts.load(id)
-    if (
-        network.show_active() in LOCAL_BLOCKCHAIN_DEVELOPMENT
-        or network.show_active() in FORKED_LOCAL_ENVOIRMENTAL
-    ):
+    if network.show_active() in LOCAL_BLOCKCHAIN_DEVELOPMENT or network.show_active() in FORKED_LOCAL_ENVOIRMENT:
         return accounts[0]
     return accounts.add(config["wallets"]["from_key"])
 
 
-# mapping contract-key to contract-name
-contract_to_mock = {
-    "eth_usd_price_feed": MockV3Aggregator,
-    "vrf_coordinator": VRFCoordinatorMock,
-    "link_token": LinkToken,
-}
+# Contract to name dictionery
+contract_to_mock = {"eth_usd_price_feed": MockV3Aggregator, "vrf_coordinator": VRFCoordinatorV2Mock}
 
 
 def get_contract(contract_name):
-    """This function will grab the contract address from brownie config file if defined,
+    """
+    This function will grab the contract address from brownie config file if defined,
     otherwise, it will deploy a mock version of that contract and will return that
     contract.
 
@@ -55,13 +41,9 @@ def get_contract(contract_name):
             of that contract.
     """
     contract_type = contract_to_mock[contract_name]
-    if (
-        network.show_active() not in LOCAL_BLOCKCHAIN_DEVELOPMENT
-    ):  # working on testnet/forked net -> no need mocks
+    if network.show_active() not in LOCAL_BLOCKCHAIN_DEVELOPMENT:  # working on testnet/forked net -> no need mocks
         contract_address = config["networks"][network.show_active()][contract_name]
-        contract = Contract.from_abi(
-            contract_type._name, contract_address, contract_type.abi
-        )
+        contract = Contract.from_abi(contract_type._name, contract_address, contract_type.abi)
     else:  # working on development network -> need to deploy mocks
         if len(contract_type) <= 0:  # if no previous mock deployed
             deploy_mocks(contract_type)
@@ -73,28 +55,47 @@ def get_contract(contract_name):
 DECIMALS = 8
 INITIAL_VALUE = 200000000000
 
+BASE_FEE = Web3.toWei(0.25, "ether")
+GAS_PRICE_LINK = 1e9
+
 
 def deploy_mocks(contract_name):
     account = get_account()
     print("Deploying Mock!")
     MockV3Aggregator.deploy(DECIMALS, INITIAL_VALUE, {"from": account})
-    link_token = LinkToken.deploy({"from": account})
-    VRFCoordinatorMock.deploy(link_token.address, {"from": account})
+    VRFCoordinatorV2Mock.deploy(BASE_FEE, GAS_PRICE_LINK, {"from": account})
     print("Deployed!")
+    print("--------------------------------")
 
 
-##
-# dev fund a contract with link token
-# @para contract_address = contract address to fund (required)
-# @para account = in case a specific account to send from otherwise using default
-# @para link_token = in case of a specific link token address to use, otherwise default
-# @para value = default 0.1 LINK
-def fund_with_link(
-    contract_address, account=None, link_token=None, value=250000000000000000
-):
-    account = account if account else get_account()
-    link_token = link_token if link_token else get_contract("link_token")
-    tx = link_token.transfer(contract_address, value, {"from": account})
+VRF_SUB_FUND_AMOUT = 10
+
+
+def create_subscription():
+    # If working on testened, pull subscription id from config file
+    if (
+        network.show_active() not in LOCAL_BLOCKCHAIN_DEVELOPMENT
+        and network.show_active() not in FORKED_LOCAL_ENVOIRMENT
+    ):
+        return config["networks"][network.show_active()]["subscription_id"]
+    # Else working on local or forked development
+    # Check rather vrf mock deployed already, otherwise deploy
+    if len(VRFCoordinatorV2Mock) < 0:
+        vrf_coordinator = get_contract("vrf_coordinator")
+    else:
+        vrf_coordinator = VRFCoordinatorV2Mock[-1]
+    tx = vrf_coordinator.createSubscription()
     tx.wait(1)
-    print("Contract funded with LINK!!")
-    return tx
+    subscription_id = tx.events["SubscriptionCreated"]["subId"]
+    # Current VRF coordinator v2 iteration allow to fund the contract
+    # mock with link without the necesery for the link token
+    tx = vrf_coordinator.fundSubscription(subscription_id, VRF_SUB_FUND_AMOUT)
+    tx.wait(1)
+    return subscription_id
+
+
+def get_publish_source():
+    if network.show_active() in LOCAL_BLOCKCHAIN_DEVELOPMENT or not os.getenv("ETHERSCAN_TOKEN"):
+        return False
+    else:
+        return True

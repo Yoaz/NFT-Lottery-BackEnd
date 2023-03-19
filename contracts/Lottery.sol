@@ -3,9 +3,18 @@
 pragma solidity ^0.8.7;
 pragma experimental ABIEncoderV2;
 
+/** @title A Simple NFT Lottery Contract
+ * @author Yoaz Shmider
+ * @notice This contract implements Chainlink's V3Aggregator
+  and VRF Consumer Base V2
+ * @dev There are few features that needs to be fixed
+ */
+
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/utils/introspection/ERC165Storage.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
 import "@chainlink/contracts/src/v0.8/ConfirmedOwner.sol";
@@ -19,8 +28,15 @@ error Lottery__UpKeepNotNeeded(
 	uint256 playersLength,
 	uint256 lotteryState
 );
+error Lottery__NFTValueNotMatch();
 
-contract Lottery is VRFConsumerBaseV2, Ownable, KeeperCompatibleInterface {
+contract Lottery is
+	VRFConsumerBaseV2,
+	Ownable,
+	KeeperCompatibleInterface,
+	IERC721Receiver,
+	ERC165Storage
+{
 	/* --- Types --- */
 	enum LOTTERY_STATE {
 		OPEN,
@@ -47,16 +63,17 @@ contract Lottery is VRFConsumerBaseV2, Ownable, KeeperCompatibleInterface {
 
 	// Lottery Variables
 	IERC721 internal token;
-	address payable[] private s_players; // To keep track of the participants
+	address payable[] public s_players; // To keep track of the participants
 	uint256 private immutable i_initialNFTValue;
 	AggregatorV3Interface internal ethUsdPriceFeed;
 	address payable private s_recentWinner;
 	LOTTERY_STATE private s_lotteryState;
 	uint256 private s_lastTimeStamp;
 	uint256 private immutable i_interval;
+	nft s_tempToken; // This will be to hold NFT token to evulate rather for evulations of requirements.
 
 	// Will hold current lottery treasury (all NFTs in lottery pot)
-	nft[] public s_tresury;
+	nft[] public s_treasury;
 	// To keep track of nft's array index to actual NFT item
 	mapping(bytes32 => nft) private indexToNFT;
 
@@ -78,10 +95,11 @@ contract Lottery is VRFConsumerBaseV2, Ownable, KeeperCompatibleInterface {
 		uint32 _callbackGasLimit,
 		uint256 _interval
 	) VRFConsumerBaseV2(_vrfCoordinatorV2) {
-		i_initialNFTValue = 20 * (10**18); // 18 decimals for our starting nft value which is 20 usd
+		_registerInterface(IERC721Receiver.onERC721Received.selector); //Requirement for been able to recieve ERC721 (NFT) tokens to a smart contract using safeTransfer
+		i_initialNFTValue = 20 * (10 ** 18); // 18 decimals for our starting nft value which is 20 usd
 		ethUsdPriceFeed = AggregatorV3Interface(_priceFeedAddress); // get eth to usd price feed instance
 		i_vrfCoordinator = VRFCoordinatorV2Interface(_vrfCoordinatorV2); // get vrfcoordinator instance
-		s_lotteryState = LOTTERY_STATE.CLOSED;
+		s_lotteryState = LOTTERY_STATE.OPEN;
 		i_gasLane = _gasLane;
 		i_subscriptionId = _subscriptionId;
 		i_callbackGasLimit = _callbackGasLimit;
@@ -102,15 +120,12 @@ contract Lottery is VRFConsumerBaseV2, Ownable, KeeperCompatibleInterface {
 		public
 		view
 		override
-		returns (
-			bool upKeepNeeded,
-			bytes memory /*performData*/
-		)
+		returns (bool upKeepNeeded, bytes memory /*performData*/)
 	{
 		bool isOpen = (s_lotteryState == LOTTERY_STATE.OPEN);
 		bool timePassed = ((block.timestamp - s_lastTimeStamp) >= i_interval);
 		bool hasPlayers = (s_players.length > 0);
-		bool hasBalance = (s_tresury.length > 0); // Check for at least one NFT in Lottery treasury
+		bool hasBalance = (s_treasury.length > 0); // Check for at least one NFT in Lottery treasury
 		upKeepNeeded = (isOpen && timePassed && hasPlayers && hasBalance);
 		return (upKeepNeeded, "0x");
 	}
@@ -118,14 +133,12 @@ contract Lottery is VRFConsumerBaseV2, Ownable, KeeperCompatibleInterface {
 	/**
 	 * dev: This the function that will perform the upkeep based upon interval and is acting as endLottery function
 	 */
-	function performUpkeep(
-		bytes calldata /* performData */
-	) external override {
+	function performUpkeep(bytes calldata /* performData */) external override {
 		(bool upKeepNeeded, ) = checkUpkeep(new bytes(0));
 		if (!upKeepNeeded) {
 			// error with information to understand why up keep is not required
 			revert Lottery__UpKeepNotNeeded(
-				s_tresury.length,
+				s_treasury.length,
 				s_players.length,
 				uint256(s_lotteryState)
 			);
@@ -142,41 +155,43 @@ contract Lottery is VRFConsumerBaseV2, Ownable, KeeperCompatibleInterface {
 		emit requestedLotteryWinner(requestId);
 	}
 
-	function enterLottery(address _collectionAddress, uint256 _tokenId)
-		public
-		payable
-	{
-		require(
-			s_lotteryState == LOTTERY_STATE.OPEN,
-			"Can't join now, Lottery Closed!"
-		);
+	function enterLottery(
+		address _collectionAddress,
+		uint256 _tokenId
+	) external payable {
+		if (s_lotteryState == LOTTERY_STATE.CLOSED) {
+			revert Lottery__CantJoinClosed();
+		}
 		// require(
 		// 	token._isApprovedOrOwner(_msgSender(), _tokenId),
 		// 	"ERC721: transfer caller is not owner nor approved"
 		// );
 		token = IERC721(_collectionAddress);
+		// Assign storage tempToken var with current stats
+		s_tempToken._tokenAddress = _collectionAddress;
+		s_tempToken._tokenId = _tokenId;
+		s_tempToken._owner = msg.sender;
 		// 1st added NFT to lottery treasury
-		if (s_tresury.length <= 0) {
-			if (
-				getNFTValue(nft(_collectionAddress, _tokenId, msg.sender)) >=
-				i_initialNFTValue
-			) {
+		if (s_treasury.length <= 0) {
+			if (getNFTValue() >= i_initialNFTValue) {
 				revert Lottery__NftValueTooLow();
 			}
 		}
 		// Not 1st added NFT to lottery treasury
 		else {
-			require(
-				inBetween(
-					getNFTValue(nft(_collectionAddress, _tokenId, msg.sender)),
+			// NFT Value should be in lottery pot range (15% margin up or down)
+			if (
+				!inBetween(
+					getNFTValue(),
 					85 % getTreasuryAvg(),
 					115 % getTreasuryAvg()
-				),
-				"You need to add an NFT with 15% margin range of current lottery treasury avarage"
-			); //To implement getNFTValue & getTreasuryAvg
+				)
+			) {
+				revert Lottery__NFTValueNotMatch();
+			} //To implement getNFTValue & getTreasuryAvg
 		}
-		token.transferFrom(msg.sender, address(this), _tokenId);
-		s_tresury.push(nft(_collectionAddress, _tokenId, msg.sender)); //push to NFT Treasury array
+		token.safeTransferFrom(msg.sender, address(this), _tokenId);
+		s_treasury.push(s_tempToken); //push to NFT Treasury array
 		s_players.push(payable(msg.sender)); // push current player to our players array
 		emit LotteryEnter(msg.sender, _collectionAddress, _tokenId);
 	}
@@ -185,7 +200,7 @@ contract Lottery is VRFConsumerBaseV2, Ownable, KeeperCompatibleInterface {
 		uint256 value,
 		uint256 min,
 		uint256 max
-	) internal view returns (bool) {
+	) internal pure returns (bool) {
 		require(min < max);
 		return value >= min && value <= max;
 	}
@@ -197,15 +212,8 @@ contract Lottery is VRFConsumerBaseV2, Ownable, KeeperCompatibleInterface {
 		uint256 _value
 	) public onlyOwner {}
 
-	function startLottery() public onlyOwner {
-		if (s_lotteryState == LOTTERY_STATE.CLOSED) {
-			revert Lottery__CantJoinClosed();
-		}
-		s_lotteryState = LOTTERY_STATE.OPEN;
-	}
-
 	function fulfillRandomWords(
-		uint256, /*_requestId*/
+		uint256 /*_requestId*/,
 		uint256[] memory _randomWords
 	) internal override {
 		require(
@@ -226,19 +234,51 @@ contract Lottery is VRFConsumerBaseV2, Ownable, KeeperCompatibleInterface {
 
 		// reset lottery stats
 		s_players = new address payable[](0); // reset players array size 0
-		s_tresury = new nft[](0);
+		// s_treasury = new nft[](0);
 		s_lastTimeStamp = block.timestamp; //reset last time stamp
 	}
 
+	/**
+	 * dev: This function is a requirement for a smart contract that recieves an ERC721
+	 * tokens. As an IERC721Receiver, safeTransfer will check for the recieving smart contract
+	 * that has does this function implemented so NFT will not be stuck in this smart contract forever
+	 */
+	function transfer(
+		address to,
+		address collection_address,
+		uint256 tokenId
+	) public {
+		IERC721(collection_address).safeTransferFrom(
+			address(this),
+			to,
+			tokenId
+		);
+	}
+
+	/**
+	 * dev: This function is a requirement for a smart contract that recieves an ERC721
+	 * tokens. As an IERC721Receiver, this function will be called by the ERC721 holder contract
+	 * upon transfering the token.
+	 */
+	function onERC721Received(
+		address operator,
+		address from,
+		uint256 tokenId,
+		bytes calldata data
+	) public override returns (bytes4) {
+		return this.onERC721Received.selector;
+	}
+
 	/* --- View / Pure Functions --- */
-	function getTreasuryAvg() public view returns (uint256) {
+	function getTreasuryAvg() public returns (uint256) {
 		uint256 avg = 0;
 		for (
 			uint256 nftTreasuryIndex = 0;
-			nftTreasuryIndex <= s_tresury.length;
+			nftTreasuryIndex <= s_treasury.length;
 			nftTreasuryIndex++
 		) {
-			avg += getNFTValue(s_tresury[nftTreasuryIndex]);
+			s_tempToken = s_treasury[nftTreasuryIndex];
+			avg += getNFTValue();
 		}
 		return avg;
 	}
@@ -252,7 +292,7 @@ contract Lottery is VRFConsumerBaseV2, Ownable, KeeperCompatibleInterface {
 	}
 
 	// Returns value in USD of an NFT
-	function getNFTValue(nft memory _nft) public view returns (uint256) {
+	function getNFTValue() public pure returns (uint256) {
 		return 1;
 	}
 
@@ -267,12 +307,24 @@ contract Lottery is VRFConsumerBaseV2, Ownable, KeeperCompatibleInterface {
 
 	function getEntranceFee() public view returns (uint256) {
 		(, int256 price, , , ) = ethUsdPriceFeed.latestRoundData(); // fetching current eth usd price 8 decimals
-		uint256 adjustedPrice = uint256(price) * 10**10; // now price will be represented in 18 decimals as well
-		uint256 costToEnter = (i_initialNFTValue * 10**18) / adjustedPrice; // math to get our result in 18 decimals as well
+		uint256 adjustedPrice = uint256(price) * 10 ** 10; // now price will be represented in 18 decimals as well
+		uint256 costToEnter = (i_initialNFTValue * 10 ** 18) / adjustedPrice; // math to get our result in 18 decimals as well
 		return costToEnter;
 	}
 
-	function getLotteryState() public returns (LOTTERY_STATE) {
+	function getLotteryState() public view returns (LOTTERY_STATE) {
 		return s_lotteryState;
+	}
+
+	function getNumWords() public pure returns (uint256) {
+		return NUM_WORDS;
+	}
+
+	function getRequestConfirmations() public pure returns (uint256) {
+		return REQUEST_CONFIRMATIONS;
+	}
+
+	function getLatestTimeStamp() public view returns (uint256) {
+		return s_lastTimeStamp;
 	}
 }
