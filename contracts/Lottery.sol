@@ -63,7 +63,7 @@ contract Lottery is
 
 	// Lottery Variables
 	IERC721 internal token;
-	address payable[] public s_players; // To keep track of the participants
+	address payable[] private s_players; // To keep track of the participants
 	uint256 private immutable i_initialNFTValue;
 	AggregatorV3Interface internal ethUsdPriceFeed;
 	address payable private s_recentWinner;
@@ -225,9 +225,7 @@ contract Lottery is
 		s_recentWinner = s_players[indexOfWinner];
 		s_lotteryState = LOTTERY_STATE.OPEN;
 		emit winnerPicked(s_recentWinner);
-		(bool success, ) = s_recentWinner.call{ value: address(this).balance }(
-			""
-		); // transfer the latest winner with the lottery balance
+		bool success = transferAllTokens(s_recentWinner); // transfer the latest winner with the lottery balance
 		if (!success) {
 			revert Lottery__transferTreasuryFailed();
 		}
@@ -247,12 +245,31 @@ contract Lottery is
 		address to,
 		address collection_address,
 		uint256 tokenId
-	) public {
+	) internal onlyOwner {
 		IERC721(collection_address).safeTransferFrom(
 			address(this),
 			to,
 			tokenId
 		);
+	}
+
+	/**
+	 * dev: This will take care of transfering all NFT's from treasury to wallet address.
+	 * internal onlyOwner function that would be called by fulfilRondomness after winner seccfully picked
+	 */
+	function transferAllTokens(address _wallet) internal returns (bool) {
+		for (
+			uint256 tokenIndex = 0;
+			tokenIndex < s_treasury.length - 1;
+			tokenIndex++
+		) {
+			transfer(
+				_wallet,
+				s_treasury[tokenIndex]._tokenAddress,
+				s_treasury[tokenIndex]._tokenId
+			);
+		}
+		return true;
 	}
 
 	/**
