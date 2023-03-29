@@ -6,7 +6,7 @@ import os
 import shutil
 
 
-def deploy_lottery(token_address, front_end_update=False):
+def deploy_lottery(front_end_update=False):
     account = get_account()
     lottery = Lottery.deploy(
         get_contract("eth_usd_price_feed").address,
@@ -19,7 +19,8 @@ def deploy_lottery(token_address, front_end_update=False):
         publish_source=False,
     )
     print(f"SUCCESS! Contract deployed at {lottery.address}")
-    token = interface.IERC721(token_address)
+    # token = interface.IERC721(token_address)
+    token = get_contract("nft_collection")
     if front_end_update:
         update_front_end()
     return lottery, token

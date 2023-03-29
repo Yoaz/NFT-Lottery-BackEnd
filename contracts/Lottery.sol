@@ -245,7 +245,8 @@ contract Lottery is
 		address to,
 		address collection_address,
 		uint256 tokenId
-	) internal onlyOwner {
+	) public {
+		// Change back to internal onlyOwner after create local testing appropiate
 		IERC721(collection_address).safeTransferFrom(
 			address(this),
 			to,
@@ -304,7 +305,7 @@ contract Lottery is
 		return s_players[index];
 	}
 
-	function getRecenetWinner() public view returns (address) {
+	function getRecentWinner() public view returns (address) {
 		return s_recentWinner;
 	}
 
@@ -343,5 +344,9 @@ contract Lottery is
 
 	function getLatestTimeStamp() public view returns (uint256) {
 		return s_lastTimeStamp;
+	}
+
+	function getInterval() public view returns (uint256) {
+		return i_interval;
 	}
 }

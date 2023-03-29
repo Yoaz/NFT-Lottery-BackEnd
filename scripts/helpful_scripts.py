@@ -1,4 +1,4 @@
-from brownie import Lottery, network, accounts, config, VRFCoordinatorV2Mock, MockV3Aggregator, Contract
+from brownie import Lottery, network, accounts, config, VRFCoordinatorV2Mock, MockV3Aggregator, ERC721, Contract
 from web3 import Web3
 import os
 
@@ -24,7 +24,11 @@ def get_account(index=None, id=None):
 
 
 # Contract to name dictionery
-contract_to_mock = {"eth_usd_price_feed": MockV3Aggregator, "vrf_coordinator": VRFCoordinatorV2Mock}
+contract_to_mock = {
+    "nft_collection": ERC721,
+    "eth_usd_price_feed": MockV3Aggregator,
+    "vrf_coordinator": VRFCoordinatorV2Mock,
+}
 
 
 def get_contract(contract_name):
@@ -59,12 +63,18 @@ BASE_FEE = Web3.toWei(0.25, "ether")
 GAS_PRICE_LINK = 1e9
 
 
-def deploy_mocks(contract_name):
+def deploy_mocks(contract_type):
     account = get_account()
     print("Deploying Mock!")
-    MockV3Aggregator.deploy(DECIMALS, INITIAL_VALUE, {"from": account})
-    VRFCoordinatorV2Mock.deploy(BASE_FEE, GAS_PRICE_LINK, {"from": account})
-    print("Deployed!")
+    if contract_type == MockV3Aggregator:
+        MockV3Aggregator.deploy(DECIMALS, INITIAL_VALUE, {"from": account})
+        print("Deployed! {} contract".format(contract_type._name))
+    if contract_type == VRFCoordinatorV2Mock:
+        VRFCoordinatorV2Mock.deploy(BASE_FEE, GAS_PRICE_LINK, {"from": account})
+        print("Deployed! {} contract".format(contract_type._name))
+    if contract_type == ERC721:
+        ERC721.deploy("testCollection", "TEST", {"from": account})
+        print("Deployed! {} contract".format(contract_type._name))
     print("--------------------------------")
 
 
