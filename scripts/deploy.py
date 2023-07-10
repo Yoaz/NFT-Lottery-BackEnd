@@ -36,7 +36,7 @@ def transfer_token_back_to_owner(collection_address, token_id):
 
 def update_front_end():
     # Sending frontend the build folder with all the deployments info
-    copy_folders_to_front_end("./build", "../NFT Lottery BackEnd/chain-info")
+    copy_folders_to_front_end("./build", "../NFT Lottery FrontEnd/src/chain-info")
     # Sending frontend the brownie-config file in JSON format
     with open("brownie-config.yaml", "r") as brownie_config:
         config_dict = yaml.load(brownie_config, Loader=yaml.FullLoader)

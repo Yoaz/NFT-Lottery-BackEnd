@@ -58,7 +58,7 @@ contract Lottery is
 	uint64 private immutable i_subscriptionId;
 	uint16 private constant REQUEST_CONFIRMATIONS = 3;
 	uint32 private immutable i_callbackGasLimit;
-	uint32 private constant NUM_WORDS = 1;
+	uint32 private constant NUM_WORDS = 2; // Retrieve 2 randoms numbers in one call.
 	VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
 
 	// Lottery Variables
@@ -72,8 +72,11 @@ contract Lottery is
 	uint256 private immutable i_interval;
 	nft s_tempToken; // This will be to hold NFT token to evulate rather for evulations of requirements.
 
-	// Will hold current lottery treasury (all NFTs in lottery pot)
-	nft[] public s_treasury;
+	// Will hold current lottery session treasury (all NFTs in lottery pot)
+	nft[] public s_sessionTreasury;
+	// Will hold lottery self/dao treasury
+	//(every round/session one NFT randomly assign to the smart contract)
+	nft[] public s_daoTreasury;
 	// To keep track of nft's array index to actual NFT item
 	mapping(bytes32 => nft) private indexToNFT;
 
@@ -85,6 +88,10 @@ contract Lottery is
 	);
 	event requestedLotteryWinner(uint256 requestId);
 	event winnerPicked(address indexed winner);
+	event tokenForSmartContractPicked(
+		address indexed collectionAdress,
+		uint256 indexed tokenId
+	);
 
 	/* --- Functions --- */
 	constructor(
@@ -125,7 +132,7 @@ contract Lottery is
 		bool isOpen = (s_lotteryState == LOTTERY_STATE.OPEN);
 		bool timePassed = ((block.timestamp - s_lastTimeStamp) >= i_interval);
 		bool hasPlayers = (s_players.length > 0);
-		bool hasBalance = (s_treasury.length > 0); // Check for at least one NFT in Lottery treasury
+		bool hasBalance = (s_sessionTreasury.length > 0); // Check for at least one NFT in Lottery treasury
 		upKeepNeeded = (isOpen && timePassed && hasPlayers && hasBalance);
 		return (upKeepNeeded, "0x");
 	}
@@ -138,7 +145,7 @@ contract Lottery is
 		if (!upKeepNeeded) {
 			// error with information to understand why up keep is not required
 			revert Lottery__UpKeepNotNeeded(
-				s_treasury.length,
+				s_sessionTreasury.length,
 				s_players.length,
 				uint256(s_lotteryState)
 			);
@@ -171,8 +178,12 @@ contract Lottery is
 		s_tempToken._tokenAddress = _collectionAddress;
 		s_tempToken._tokenId = _tokenId;
 		s_tempToken._owner = msg.sender;
+
+		/* 
+		*** To implment the whole NFT value algorithm *** 
+
 		// 1st added NFT to lottery treasury
-		if (s_treasury.length <= 0) {
+		if (s_sessionTreasury.length <= 0) {
 			if (getNFTValue() >= i_initialNFTValue) {
 				revert Lottery__NftValueTooLow();
 			}
@@ -190,8 +201,11 @@ contract Lottery is
 				revert Lottery__NFTValueNotMatch();
 			} //To implement getNFTValue & getTreasuryAvg
 		}
+
+		*/
+
 		token.safeTransferFrom(msg.sender, address(this), _tokenId);
-		s_treasury.push(s_tempToken); //push to NFT Treasury array
+		s_sessionTreasury.push(s_tempToken); //push to NFT Treasury array
 		s_players.push(payable(msg.sender)); // push current player to our players array
 		emit LotteryEnter(msg.sender, _collectionAddress, _tokenId);
 	}
@@ -225,14 +239,22 @@ contract Lottery is
 		s_recentWinner = s_players[indexOfWinner];
 		s_lotteryState = LOTTERY_STATE.OPEN;
 		emit winnerPicked(s_recentWinner);
-		bool success = transferAllTokens(s_recentWinner); // transfer the latest winner with the lottery balance
+		// Receiving one token to the smartcontract
+		uint256 daoTokenIndex = _randomWords[1] % s_sessionTreasury.length;
+		emit tokenForSmartContractPicked(
+			s_sessionTreasury[daoTokenIndex]._tokenAddress,
+			s_sessionTreasury[daoTokenIndex]._tokenId
+		);
+		// transfer the latest winner with the lottery balance + random chosen index for
+		// smartcontract nft will be sent to the s_daoTreasury
+		bool success = tokenDisterbuter(s_recentWinner, daoTokenIndex);
 		if (!success) {
 			revert Lottery__transferTreasuryFailed();
 		}
 
 		// reset lottery stats
 		s_players = new address payable[](0); // reset players array size 0
-		// s_treasury = new nft[](0);
+		// s_sessionTreasury = new nft[](0);
 		s_lastTimeStamp = block.timestamp; //reset last time stamp
 	}
 
@@ -255,20 +277,30 @@ contract Lottery is
 	}
 
 	/**
-	 * dev: This will take care of transfering all NFT's from treasury to wallet address.
+	 * dev: This will take care of transfering all NFT's from treasury to wallet address besides the daoTokenIndex
+	 * that will transfer that token to the smart contract daoTreasury
 	 * internal onlyOwner function that would be called by fulfilRondomness after winner seccfully picked
 	 */
-	function transferAllTokens(address _wallet) internal returns (bool) {
+	function tokenDisterbuter(
+		address _wallet,
+		uint256 daoTokenIndex
+	) internal returns (bool) {
 		for (
 			uint256 tokenIndex = 0;
-			tokenIndex < s_treasury.length - 1;
+			tokenIndex < s_sessionTreasury.length - 1;
 			tokenIndex++
 		) {
-			transfer(
-				_wallet,
-				s_treasury[tokenIndex]._tokenAddress,
-				s_treasury[tokenIndex]._tokenId
-			);
+			// if current array index equal to daoToken random index
+			// Then move current nft to smartcontract (this) daoTresury
+			if (tokenIndex == daoTokenIndex) {
+				s_daoTreasury.push(s_sessionTreasury[tokenIndex]);
+			} else {
+				transfer(
+					_wallet,
+					s_sessionTreasury[tokenIndex]._tokenAddress,
+					s_sessionTreasury[tokenIndex]._tokenId
+				);
+			}
 		}
 		return true;
 	}
@@ -292,10 +324,10 @@ contract Lottery is
 		uint256 avg = 0;
 		for (
 			uint256 nftTreasuryIndex = 0;
-			nftTreasuryIndex <= s_treasury.length;
+			nftTreasuryIndex <= s_sessionTreasury.length;
 			nftTreasuryIndex++
 		) {
-			s_tempToken = s_treasury[nftTreasuryIndex];
+			s_tempToken = s_sessionTreasury[nftTreasuryIndex];
 			avg += getNFTValue();
 		}
 		return avg;
@@ -315,8 +347,7 @@ contract Lottery is
 	}
 
 	function getLotteryTreasury() public view returns (uint256) {
-		uint256 balance = address(this).balance;
-		return balance;
+		return s_sessionTreasury.length;
 	}
 
 	function getNumOfParticipants() public view returns (uint256) {
