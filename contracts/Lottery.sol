@@ -247,7 +247,7 @@ contract Lottery is
 		);
 		// transfer the latest winner with the lottery balance + random chosen index for
 		// smartcontract nft will be sent to the s_daoTreasury
-		bool success = tokenDisterbuter(s_recentWinner, daoTokenIndex);
+		bool success = tokenDistributor(s_recentWinner, daoTokenIndex);
 		if (!success) {
 			revert Lottery__transferTreasuryFailed();
 		}
@@ -281,7 +281,7 @@ contract Lottery is
 	 * that will transfer that token to the smart contract daoTreasury
 	 * internal onlyOwner function that would be called by fulfilRondomness after winner seccfully picked
 	 */
-	function tokenDisterbuter(
+	function tokenDistributor(
 		address _wallet,
 		uint256 daoTokenIndex
 	) internal returns (bool) {
@@ -346,10 +346,6 @@ contract Lottery is
 		return 1;
 	}
 
-	function getLotteryTreasury() public view returns (uint256) {
-		return s_sessionTreasury.length;
-	}
-
 	function getNumOfParticipants() public view returns (uint256) {
 		return s_players.length;
 	}
@@ -379,5 +375,11 @@ contract Lottery is
 
 	function getInterval() public view returns (uint256) {
 		return i_interval;
+	}
+
+	function getLotteryTreasury() public view returns (nft[] memory) {
+		nft[] memory result = new nft[](s_sessionTreasury.length);
+		result = s_sessionTreasury;
+		return result;
 	}
 }
